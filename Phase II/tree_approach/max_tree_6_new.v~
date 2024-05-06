@@ -1,0 +1,485 @@
+Require Import Vectors.Vector.
+Import VectorNotations.
+Require Import Coq.Arith.Arith.
+Require Import List.
+Definition vector := Vector.t.
+Require Import BinNat.
+Require Import ZArith.
+Require Import Wellfounded.
+Require Import ssreflect.
+Require Import Lia.
+Require Import Coq.Lists.List.
+Require Import Coq.Logic.Classical.
+(*Require Import ssrsearch. *)
+
+
+Inductive mytree (n: nat) : Type :=
+| mymax_index m : m <= n -> mytree n
+| mycomp m1 m2 : m1 <= n -> m2 <=n -> mytree n -> mytree n -> mytree n.                                        
+                                       
+
+Check mymax_index.
+
+Check mycomp.
+
+Program Definition x:= mymax_index 0 1 _.
+
+Program Definition y:= mymax_index 1 1 _.
+
+Program Definition z := mycomp 2 1 2 _ _ (mymax_index 2 1 _) (mymax_index 2 2 _). 
+
+(*
+
+(*list of indexes upto n-1*)
+Fixpoint index_list_nat (n : nat) : list nat :=
+  match n with
+  | 0 => nil
+  | S m => (index_list_nat m) ++ (cons m nil)
+  end.
+
+
+Compute index_list_nat 10.
+
+*)
+
+Definition create_sig {n: nat} (x : nat)  (pfxlen : x <= n) : {m | m <= n}.
+exact (exist _ x pfxlen). 
+Defined.
+
+
+
+(* list of sigs upto n-1 *)
+Fixpoint index_list_pf (n m : nat) (pfm : m <=n) : list {i | i <= n}.
+refine(
+  match m as M return (m=M) ->  list {i | i <= n}  with
+  | 0 => fun Hyp => nil
+  | S k => fun Hyp =>  (cons (create_sig k _) nil) ++ (index_list_pf n k _)
+  end (eq_refl m)).
+  all: (
+  rewrite Hyp in pfm;
+  apply le_Sn_le in pfm;
+  trivial).
+Defined.
+
+Compute (index_list_pf 9 9 _ ).
+
+
+(*
+
+(* convert a list of nat to a list of proofs *)
+
+Fixpoint gen_list_pf (n : nat)  (l : list nat) : list {i | i <=n}.
+refine(
+  match l with
+  | nil => nil
+  | cons x l' => match  (le_dec x n) with
+                 | left _ => cons (create_sig x _) (gen_list_pf n l')
+                 | right _ => gen_list_pf n l'
+                 end
+  end).                   
+  trivial.                                                        
+Defined.
+
+*)
+
+
+
+(*
+Definition pf_n_le_gen (n : nat) : {m | m <= n} := create_sig n (pf_n_le_n n).
+*)
+
+Definition pf_n_le_n (n : nat) : n <= n.
+exact (le_refl n).
+Defined.
+
+Definition pf_index_list (n: nat):=  index_list_pf n n (pf_n_le_n n).
+
+(* Every element of 0 to n-1 is in `pf_index_list`.
+*)
+
+Check pf_index_list.
+Compute pf_index_list 3.
+
+
+
+
+Fixpoint tree_gen_list {n : nat} (x: nat) (pfxlen : x <= n) (l : list {i | i <=n }) : mytree n :=
+  match l with
+  | nil => mymax_index n x pfxlen  
+  | cons y l' => mycomp n x (proj1_sig y) pfxlen (proj2_sig y) (tree_gen_list x pfxlen l') (tree_gen_list (proj1_sig y) (proj2_sig y) l')
+ end.                       
+
+(* For any input, for every element of (pfxlen::l) its proj2_sig is in `all_leaves` of `tree_gen_list`. 
+*)
+
+Definition tree_gen (n: nat):= tree_gen_list n (pf_n_le_n n) (pf_index_list n).
+
+(* `tree_gen n` will have every element of 0 to n in its `all_leaves`. 
+*)
+
+
+Compute (tree_gen 3).
+
+
+
+Fixpoint all_leaves  {n: nat} (t : mytree n) : list nat:=
+  match t with
+  | mymax_index _ i _ => cons i nil
+  | mycomp _ _ _ _ _ t1 t2 =>  (all_leaves t1) ++ (all_leaves t2)
+  end.                                
+
+
+Compute all_leaves (tree_gen 3).
+
+
+Definition tree_for_list (l : list nat) := tree_gen ((length l)-1).
+
+Compute all_leaves (tree_for_list (10::20::30::40::nil)).
+
+
+Definition TorF (P : Prop ): Set:= {P} + {~P}.
+Search ( _ <= _ -> _ < _).
+(*
+Lemma le_n_lSn : forall {i n} ,  (i <= n) -> (i < (S n)) := le_lt_n_Sm i n.
+lia.
+Qed.*)
+
+Definition le_n_lSn  {i n} (pf : i <= n) :  (i < (S n)) := le_lt_n_Sm i n pf.
+
+
+Fixpoint eval_tree_v {n} {f : nat ->nat -> Prop } (v:vector nat (S n)) (t: mytree n) (compf : forall a b :nat, TorF (f a b)) : {m | m <= n} :=
+  match t with
+  | mycomp _ i1 i2 p1 p2 t1 t2 => let v1 := Vector.nth_order v (le_n_lSn  p1) in
+                             let v2 := Vector.nth_order v (le_n_lSn  p2) in
+                             match compf v1 v2 with
+                             | left _ => eval_tree_v v t2 compf
+                             | right _ => eval_tree_v v t1 compf
+                             end
+  | mymax_index _ i p => create_sig i p
+  end.
+
+Check length.
+
+Fixpoint eval_tree_lst {n} {f : nat -> nat -> Prop} (v : list nat) (t : mytree n) (compf : forall a b: nat, TorF (f a b)) : {m | m <= n} :=
+  match t with
+  | mycomp _ i1 i2 p1 p2 t1 t2 => let v1 := nth i1 v 0 in
+                                 let v2 := nth i2 v 0 in
+                                 match compf v1 v2 with
+                                 | left _ => eval_tree_lst v t2 compf
+                                 | right _ => eval_tree_lst v t1 compf
+                                 end
+  | mymax_index _ i p => create_sig i p
+  end.
+
+
+Fixpoint eval_tree_lst_max {n} (v : list nat) (t : mytree n) : {m | m <= n} :=
+  match t with
+  | mycomp _ i1 i2 p1 p2 t1 t2 => let v1 := nth i1 v 0 in
+                                 let v2 := nth i2 v 0 in
+                                 match le_dec v1 v2 with
+                                 | left _ => eval_tree_lst_max v t2 
+                                 | right _ => eval_tree_lst_max v t1 
+                                 end
+  | mymax_index _ i p => create_sig i p
+  end.
+
+Check tl.
+Check hd.
+Check nth.
+
+Fixpoint eval_max {n} (x: nat) (pfxlen : x <= n) (l : list {i | i <=n }) (v : list nat) :=
+  match l with
+  | nil => create_sig x pfxlen
+  | pfylen :: l' => let y := proj1_sig pfylen in
+                  match le_dec (nth x v 0) (nth y v 0) with
+                  | left _ => eval_max y (proj2_sig pfylen) l' v
+                  | right _ => eval_max x pfxlen l' v
+                  end
+  end.
+
+Search (In).
+
+Definition eval_max_val {n} (x: nat) (pfxlen : x <= n) (l : list {i | i <=n }) (v : list nat): nat :=
+  let index := eval_max x pfxlen l v in
+  nth (proj1_sig index) v 0 .
+
+                    
+
+   
+
+
+
+
+
+
+
+
+
+
+                         
+Definition len {n} (v: vector nat n) := n.
+Definition v :=[1000;2;3;5;4000;0].
+
+Definition lst := cons 1000 (cons 2 (cons 3 (cons 5 (cons 4000 (cons 0 nil))))).
+
+Definition compute_max_index {n} (v: vector nat (S n)): {m : nat | m <= n} := eval_tree_v v (tree_gen n) le_dec.
+
+Print compute_max_index.
+
+Definition compute_max_index_lst {n} (v : list nat) (goodList : length v = S n) := eval_tree_lst v (tree_gen n) le_dec.
+                                                 
+
+Check compute_max_index.
+
+Definition compute_max {n} (v : vector nat (S n)) := let pfi := proj2_sig (compute_max_index v) in
+                                                   Vector.nth_order v (le_n_lSn pfi).
+
+Definition compute_max_lst {n} (v: list nat) (goodList : length v = S n) :=
+  let i := proj1_sig (compute_max_index_lst v goodList) in
+  nth i v 0.
+                                            
+
+Compute  (compute_max_index v ).
+Compute (@compute_max_index_lst 5 lst _ ).
+
+Compute (compute_max v).
+Compute (@compute_max_lst 5 lst _ ).
+Check rev.
+Compute (eval_max 5 _  (tl(rev(pf_index_list 5))) lst ).
+Check (List.Forall).
+
+Search (forall A, list _  -> list A -> list A).
+Search (forall n, n <= n).
+Search (Forall).
+Search (In).
+Search (_ *_  -> _ ).
+(*
+---- IN ----
+in_eq: forall [A : Type] (a : A) (l : list A), In a (a :: l)
+in_cons: forall [A : Type] (a b : A) (l : list A), In b l -> In b (a :: l)
+---- FORALL -----
+Forall_nil:
+  forall [A : Type] (P : A -> Prop),
+  Forall P Datatypes.nil
+
+Forall_cons:
+  forall [A : Type] [P : A -> Prop] 
+    (x : A) [l : list A],
+  P x -> Forall P l -> Forall P (x :: l)
+ *)
+Print sig.
+Search (~ _ <= _ -> _  ).
+
+Fixpoint find_max_of_list (x: nat) (l : list nat): {n : nat | In n (x::l) /\ Forall (fun y => y <= n) (x::l) }.
+  refine (match l as L return {n : nat | In n (x::L) /\ Forall (fun y => y <= n) (x::L)  } with
+          | v::vs => match le_dec x v with
+                    | left _   => match find_max_of_list v vs with
+                                 | exist _ m pf => exist _ m _
+                                 end
+                                   
+                    | right _  => match (find_max_of_list x vs) with
+                                 | exist _ m pf => exist _ m _
+                                 end
+                    end
+                      
+          | nil => exist _ x (conj (in_eq x nil) (Forall_cons x (Nat.le_refl x) (Forall_nil _) )) 
+          end). 
+- split. destruct pf.  
+  + apply in_cons. assumption.
+  + apply Forall_cons. destruct pf. apply Forall_inv in H0. exact( Nat.le_trans _ _ _  l0 H0). destruct pf. assumption. 
+    
+- destruct pf. split. 
+  + simpl. simple apply in_inv in H. destruct  H.
+    ++ left . assumption.
+    ++ right. right. assumption.
+  + apply Forall_cons. apply Forall_inv in H0.
+    ++ assumption.
+    ++ apply Forall_cons. apply Forall_inv in H0. simple apply not_le in n.
+       apply not_gt.
+       Search ( _ -> ~ _ > _  ) .
+       apply gt_asym.
+       
+       Search ( _ -> _ -> _ > _).
+       exact (le_gt_trans _ _ _ H0  n).
+       simple apply Forall_inv_tail in H0. assumption.
+Show Proof.        
+Defined.
+
+Compute (proj1_sig (find_max_of_list 3 nil) ). 
+Compute (find_max_of_list 3 nil).
+
+Check eq_dec.
+
+Fixpoint find_index_from_in  {a : nat} {l : list nat} (in_pf : In a l) {struct l} : nat .
+ refine( (match l as L return l=L -> nat with
+         | nil => fun Hyp => _  
+          | x::xs =>fun  Hyp => match (Nat.eq_dec a x) with
+                           | left _ => 0 
+                           | right _ => S ( find_index_from_in a xs _ )
+                           end 
+         end) (eq_refl l)
+       ).
+ - rewrite Hyp in in_pf. apply  in_nil in in_pf. contradiction. 
+ - rewrite Hyp in in_pf. simple apply in_inv in in_pf. 
+   ++ destruct in_pf. 
+      +++ Search ( _ = _ -> _ = _ ). apply eq_sym in H. contradiction . 
+      +++ trivial. 
+Defined. 
+
+Search ( _ /\ _  -> _ ). 
+Compute (find_index_from_in  (proj1 (proj2_sig (find_max_of_list 3 lst)))).
+
+
+
+Search (forall {A}, list A -> A -> _   ).
+Search "nth".
+
+
+
+Fixpoint simple_max_find (x: nat) (l: list nat) : nat := 
+  match l with
+  | nil => x
+  | v :: vs => match le_dec x v with
+             | left _ => simple_max_find v vs
+             | right _ => simple_max_find x vs
+             end
+  end.
+
+Compute (simple_max_find 3 nil).
+
+Lemma someLemma (x : nat) (l : list nat) : simple_max_find x l = proj1_sig (find_max_of_list x l).
+induction l. 
+- simpl. unfold find_max_of_list.  
+  
+Compute (proj1_sig (find_max_of_list 3 nil) ). 
+(*
+Lemma finds_x_if_it_is_max (x:nat) (l : list nat) : Forall (fun y => y < x) l -> find_max_of_list x l = x.
+induction l.
+- simpl.  intro. trivial.
+- simpl.  intro. destruct le_dec.
+  + inversion H.  subst. lia.
+  + apply IHl. inversion H. exact H3.      
+Qed. 
+*)
+
+  
+Lemma someLemma (x : nat)  (l : list nat) : x <= proj1_sig (find_max_of_list x l) . 
+induction l.
+- simpl. unfold find_max_of_list. trivial.
+- unfold find_max_of_list. destruct le_dec.
+  + 
+
+
+
+
+
+
+
+
+    
+     Search (In).
+Check or_introl.
+
+    Compute (find_max_of_list 3 lst).
+
+Lemma x_less_compute_max {n} (x: nat) (pfxlen : x <= n) (l : list {m | m <= n}) (v : list nat) (pflenght : length v = S n) : 
+  nth x v 0 <=  (eval_max_val x (pfxlen) l v) .
+induction l.
+- unfold eval_max_val. simpl. trivial.
+- unfold eval_max_val. simpl. destruct le_dec.
+  +  simpl. induction IHl.
+     ++
+
+       Lemma computes_max {n} (x: nat) (pfxlen : x <= n) (l : list {m | m <= n}) (v : list nat) (pflenght : length v = S n) :
+  Forall (fun index => nth (proj1_sig index) v 0 <=  (eval_max_val x (pfxlen) l v) ) (l++(cons (create_sig x pfxlen) nil)). 
+  induction l.
+  -  simpl. unfold eval_max_val. simpl. apply Forall_cons.
+    + simpl. trivial.
+    + apply Forall_nil.      
+  - 
+    apply Forall_cons.
+    +  simpl.  unfold eval_max_val. unfold eval_max. destruct le_dec.
+       ++ 
+    
+(*
+Fixpoint ourNth {n} {A} (i : Fin.t (S n)) (v : vector A (S n)) :=
+  match i with
+  | Fin.F1 => Vector.hd v
+  | Fin.FS f => ourNth f (Vector.tl v)
+  end.
+*)                           
+
+Section ListInduction.
+
+Variable A : Type.
+Variable P : list A -> Prop.
+
+Hypothesis P_nil : P nil.
+Hypothesis P_cons : forall (x : A) (l : list A), P l -> P (x :: l).
+
+Fixpoint list_induction (l : list A) : P l :=
+  match l with
+  | nil => P_nil
+  | x :: xs => P_cons x xs (list_induction xs)
+  end.
+
+End ListInduction.
+Search (Vector.In).
+
+Lemma compute_max_is_from_list : forall {n : nat} (v : list nat) (goodlist : length v = S n), In (compute_max_lst v goodlist) v.
+  intros.
+  (*apply (list_induction nat (fun l => length l = S m -> In (compute_max_lst l goodlist))).*)
+  induction n.
+- simpl.
+  unfold compute_max_lst. unfold compute_max_index_lst. unfold tree_gen. unfold pf_index_list. simpl.
+  Search (In).  
+  refine (nth_In v0 0 _ ).  
+  replace (length v0).
+  lia.
+
+(*
+Lemma len1vector : forall {A} (v: vector A 1), (Vector.cons A (v[@Fin.F1]) 0 []) = v.
+  intros.
+  simpl.
+  Search (Vector.t _ _ = Vector.t _ _ ).
+  
+  unfold Vector.nth.
+  
+  constructor.
+  
+unfold Vector.hd.
+unfold caseS.
+simpl.
+*)
+(*
+Lemma index_computed_is_max : forall {n : nat} (v: vector nat (S n)), Vector.Forall (fun val => val <= compute_max v) v.
+  intros.
+  induction n.
+  - unfold compute_max. unfold compute_max_index. unfold tree_gen.  unfold pf_index_list. unfold index_list_pf.
+    unfold tree_gen_list. unfold eval_tree. simpl. unfold pf_n_le_n. unfold le_n_lSn.unfold nth_order.unfold Fin.of_nat_lt.
+
+    Search (Vector.In).
+    Check (In_cons_hd).
+
+    (*
+Lemma compute_max_is_from_vector : forall {n : nat} (v : vector nat (S n)), Vector.In (compute_max v) v. 
+intros.
+induction n.
+- unfold compute_max. unfold compute_max_index. unfold tree_gen. unfold pf_index_list. unfold index_list_pf.
+  unfold tree_gen_list. unfold eval_tree. simpl. unfold pf_n_le_n. unfold le_n_lSn. unfold nth_order. unfold Fin.of_nat_lt. apply
+*)
+*) 
+
+
+  
+(*
+Fixpoint tree_eval {n : nat} (t : mytree n) (l : list nat) : nat:=
+  match t with
+  | mymax_index m k _  => mth element of v. 
+  | mycomp m1 m2 _ _ t1 t2 => if m1th element of v  >= m2 th element of v, tree_eval_max in t1 else tree_eval_max of t2
+
+ 
+
+Definition computemax {n : nat} (v : vector nat (n+1)):= (tree_eval_max (treegen n) v).  
+
+*)                      

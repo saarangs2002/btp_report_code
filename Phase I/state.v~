@@ -1,0 +1,61 @@
+Require Import MyProject.library.
+
+(*------------------------------Current Sensors----------------------------*)
+Inductive currSensor : axis ->  Type :=
+  SID (ax : axis) : sensorId -> currSensor ax.
+
+(*-----------------------------Isolation Status----------------------------*)
+(* iso x_ax (true,true,true) means all the sensors are isolated*)
+Inductive IsolatedSensors : axis -> Type :=
+  iso (ax : axis) : bool*bool*bool -> IsolatedSensors ax.
+
+
+Inductive AllIsolatedSensors : Type :=
+  alliso : (IsolatedSensors x_ax)*(IsolatedSensors y_ax)*(IsolatedSensors z_ax) -> AllIsolatedSensors.
+
+(*Isolation status of each system*)
+Inductive AcquisitionIsolated : Type :=
+  AcqIso : bool*bool*bool -> AcquisitionIsolated.
+
+(* Communication (to OBC) status of each communication interface 3 for each OBC *)
+(* Make a type for single OBC and reuse it below *)
+Inductive CommIsolated : Type :=
+  CommIso : bool*bool*bool -> CommIsolated.
+                  
+
+(*Add current OBC state *)
+(*Add a unit that will select output from the 2 OBC according to the switch flags. It also outputs  a  obc index *)
+(*Can OBC have other failures other than 3 communication failures? *)
+(*---------------------Cumulative Health Count-----------------------------*)
+
+(*Mention sensor *)
+Inductive SensorCumulativeHealthFailure : axis -> Type :=
+  SenHFcount (ax : axis) : nat*nat*nat -> SensorCumulativeHealthFailure ax.
+
+Inductive AllSensorCumulativeHealthFailure : Type :=
+  allSenHFcount : ( SensorCumulativeHealthFailure x_ax )*( SensorCumulativeHealthFailure y_ax )*( SensorCumulativeHealthFailure z_ax ) -> AllSensorCumulativeHealthFailure.
+
+Inductive CumulativeHealthFailureAcq : Type :=
+  AcqHFcount : nat*nat*nat -> CumulativeHealthFailureAcq.
+ 
+Inductive CumulativeHealthFailureComm : Type :=
+ CommHFcount : nat*nat*nat -> CumulativeHealthFailureComm.
+(* Index with system *)
+(*----------------------------Miscomparison Count-------------------------*)
+
+(*Add cumulative to the name*)
+(* try to make miscomparisoncount type safe*)
+Inductive MiscomparisonCount : axis -> Type :=
+  misCount (ax : axis) : nat*nat*nat -> MiscomparisonCount ax.
+
+
+Inductive AllMiscomparisonCount : Type :=
+  AllmisCount : (MiscomparisonCount x_ax)*(MiscomparisonCount y_ax)*(MiscomparisonCount z_ax) -> AllMiscomparisonCount.
+
+(*Use below OBCflag type*)
+Inductive OBCFlag : Type :=
+| raised : OBCFlag
+| notRaised : OBCFlag.
+
+Check (raised).
+Check (notRaised).
